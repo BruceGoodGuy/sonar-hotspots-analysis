@@ -29,50 +29,121 @@ import {
   Download,
   Zap,
   Play,
+  AlertCircle,
+  Activity,
+  Database,
   Pause,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { toast } from "sonner"
+import { Skeleton } from "@/components/ui/skeleton"
+import FetchButton from "@/features/fetch/fetch-button";
+import ProgressStep from "@/features/fetch/progress-step";
+
+const fetchFacts = [
+  "SonarQube API supports pagination with up to 500 items per request",
+  "Hotspots are categorized into 4 severity levels: High, Medium, Low, Info",
+  "Each hotspot contains author, creation date, and resolution status",
+  "API rate limit: 1000 requests per hour per token",
+  "Data includes file path, line number, and security category",
+];
+
+
+
+
 export default function ServerFetch() {
   const [isConnected, setIsConnected] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
+
   const [fetchProgress, setFetchProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const [currentFact, setCurrentFact] = useState(0);
   const [serverUrl, setServerUrl] = useState("https://sonar.company.com");
   const [apiToken, setApiToken] = useState("");
-  const [selectedProject, setSelectedProject] = useState("");
   const [estimatedTime, setEstimatedTime] = useState("2m 30s");
   const [fetchedCount, setFetchedCount] = useState(0);
   const [fetchCompleted, setFetchCompleted] = useState(false);
   const [fetchResults, setFetchResults] = useState(null);
 
-  const handleTestConnection = () => {
-    setIsConnected(true);
-    // Simulate connection test
-    setTimeout(() => {
-      setIsConnected(true);
-    }, 1000);
-  };
+  const [projects, setProjects] = useState([]);
+  const [isLoading, setLoading] = useState(true);
+  const [selectedProject, setSelectedProject] = useState("");
+  const [isFetching, setIsFetching] = useState(false);
+  const [fetchStream, setFetchStream] = useState({});
+  const [stateStep, setStateStep] = useState({ status: '', step: '', duration: 0 });
+  const [duration, setDuration] = useState({ connect: 0.1, fetch: 0.1, store: 0.1 });
 
-  const handleStartFetch = () => {
+  const handleStartFetch = async () => {
     setIsFetching(true);
-    setFetchProgress(0);
-    setFetchedCount(0);
-    setCurrentStep(0);
-  };
+    setStateStep({ status: 'pending', step: 'connect' });
+    let startTime = Date.now();
+    try {
+      const res = await fetch("/api/fetch",
+        {
+          method: "POST",
+          body: JSON.stringify({ projectKey: selectedProject })
+        }
+      );
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle className="h-4 w-4 text-primary" />;
-      case "failed":
-        return <AlertCircle className="h-4 w-4 text-destructive" />;
-      case "in-progress":
-        return <Activity className="h-4 w-4 text-blue-500 animate-pulse" />;
-      default:
-        return <Clock className="h-4 w-4 text-muted-foreground" />;
+      for (; ;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        // Process complete NDJSON lines
+        const lines = buf.split("\n");
+        buf = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const progress = JSON.parse(line);
+          if (progress.step !== "error") {
+            const { payload } = progress;
+            if (payload.status === 'failed') {
+              setStateStep({ status: 'failed', step: progress.step });
+              throw new Error(payload.detail);
+            }
+            if (payload.status === 'done') {
+              const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
+              setDuration((prev) => ({ ...prev, [progress.step]: elapsedTime }));
+              startTime = Date.now();
+            }
+            setStateStep({ status: payload.status, step: progress.step });
+          }
+        }
+      }
+    } catch (error) {
+      const errorMessage = error.message || "Failed to start fetch";
+      toast.error(errorMessage);
+    } finally {
+      setIsFetching(false);
     }
   };
+
+  const fetchProject = async () => {
+    setLoading(true);
+    try {
+      const reponse = await fetch('/api/projects');
+      if (!reponse.ok) {
+        throw Error("Can't fetch projects");
+      }
+      const { data: { projects } } = await reponse.json();
+      setProjects(projects);
+    } catch (error) {
+      console.log(error);
+      toast.error("Can't fetch project!");
+      return;
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchProject();
+  }, [])
+
 
   return (
     <>
@@ -228,7 +299,7 @@ export default function ServerFetch() {
                         {Math.round(
                           (fetchResults.resolvedIssues /
                             fetchResults.newIssues) *
-                            100
+                          100
                         )}
                         %
                       </Badge>
@@ -278,78 +349,34 @@ export default function ServerFetch() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="server-url">Server URL</Label>
-                <Input
-                  id="server-url"
-                  value={serverUrl}
-                  onChange={(e) => setServerUrl(e.target.value)}
-                  placeholder="https://sonar.company.com"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="api-token">API Token</Label>
-                <Input
-                  id="api-token"
-                  type="password"
-                  value={apiToken}
-                  onChange={(e) => setApiToken(e.target.value)}
-                  placeholder="Enter your API token"
-                />
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="project">Project</Label>
-                <Select
-                  value={selectedProject}
-                  onValueChange={setSelectedProject}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="main-app">Main Application</SelectItem>
-                    <SelectItem value="api-service">API Service</SelectItem>
-                    <SelectItem value="frontend">Frontend App</SelectItem>
-                    <SelectItem value="mobile">Mobile App</SelectItem>
-                  </SelectContent>
-                </Select>
+                {!isLoading ?
+                  <Select
+                    value={selectedProject}
+                    disabled={isFetching}
+                    onValueChange={setSelectedProject}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {
+                        projects.map(project => <SelectItem key={project.id} value={project.id}>{project.value}</SelectItem>)
+                      }
+                    </SelectContent>
+                  </Select>
+                  :
+                  <Skeleton className="h-[30px] w-[120px] rounded-md" />}
               </div>
-
               <Separator />
 
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleTestConnection}
-                  disabled={!serverUrl || !apiToken}
-                  className="flex-1 bg-transparent"
-                >
-                  <Zap className="h-4 w-4 mr-2" />
-                  Test Connection
-                </Button>
-                {isConnected && (
-                  <CheckCircle className="h-5 w-5 text-primary mt-2" />
-                )}
-              </div>
+              <FetchButton
+                isLoading={isLoading}
+                selectedProject={selectedProject}
+                isFetching={isFetching}
+                handleStartFetch={handleStartFetch}
+              />
 
-              <Button
-                onClick={handleStartFetch}
-                disabled={!isConnected || !selectedProject || isFetching}
-                className="w-full"
-              >
-                {isFetching ? (
-                  <>
-                    <Pause className="h-4 w-4 mr-2" />
-                    Fetching...
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-4 w-4 mr-2" />
-                    Start Fetch
-                  </>
-                )}
-              </Button>
             </CardContent>
           </Card>
         </div>
@@ -367,79 +394,7 @@ export default function ServerFetch() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {isFetching && (
-                <>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Overall Progress</span>
-                      <span>{fetchProgress}%</span>
-                    </div>
-                    <Progress value={fetchProgress} className="h-2" />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-primary">
-                        {fetchedCount}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        Hotspots Fetched
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{estimatedTime}</div>
-                      <div className="text-sm text-muted-foreground">
-                        Estimated Time
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">4/6</div>
-                      <div className="text-sm text-muted-foreground">
-                        Steps Complete
-                      </div>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div className="space-y-3">
-                    <h4 className="font-medium">Processing Steps</h4>
-                    {fetchSteps.map((step) => (
-                      <div key={step.id} className="flex items-center gap-3">
-                        {getStatusIcon(step.status)}
-                        <span className="flex-1">{step.name}</span>
-                        {step.duration && (
-                          <span className="text-sm text-muted-foreground">
-                            {step.duration}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  <Separator />
-
-                  <div className="bg-muted/50 p-4 rounded-lg">
-                    <h4 className="font-medium mb-2 flex items-center gap-2">
-                      <Database className="h-4 w-4" />
-                      Did you know?
-                    </h4>
-                    <p className="text-sm text-muted-foreground">
-                      {fetchFacts[currentFact]}
-                    </p>
-                  </div>
-                </>
-              )}
-
-              {!isFetching && (
-                <div className="text-center py-8">
-                  <Download className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">
-                    Configure your server connection and click "Start Fetch" to
-                    begin
-                  </p>
-                </div>
-              )}
+              <ProgressStep state={stateStep} duration={duration} />
             </CardContent>
           </Card>
         </div>

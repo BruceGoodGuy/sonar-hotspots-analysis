@@ -83,48 +83,6 @@ const fetchHistory = [
   },
 ];
 
-const fetchSteps = [
-  {
-    id: 1,
-    name: "Connecting to SonarQube server",
-    status: "completed",
-    duration: "0.5s",
-  },
-  {
-    id: 2,
-    name: "Authenticating with API token",
-    status: "completed",
-    duration: "0.3s",
-  },
-  {
-    id: 3,
-    name: "Fetching project list",
-    status: "completed",
-    duration: "1.2s",
-  },
-  {
-    id: 4,
-    name: "Retrieving hotspots data",
-    status: "in-progress",
-    duration: "45.2s",
-  },
-  {
-    id: 5,
-    name: "Processing and validating data",
-    status: "pending",
-    duration: "",
-  },
-  { id: 6, name: "Storing in local database", status: "pending", duration: "" },
-];
-
-const fetchFacts = [
-  "SonarQube API supports pagination with up to 500 items per request",
-  "Hotspots are categorized into 4 severity levels: High, Medium, Low, Info",
-  "Each hotspot contains author, creation date, and resolution status",
-  "API rate limit: 1000 requests per hour per token",
-  "Data includes file path, line number, and security category",
-];
-
 
 export default function FetchPage() {
   const [isConnected, setIsConnected] = useState(false);

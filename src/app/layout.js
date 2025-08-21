@@ -1,6 +1,7 @@
 import { Space_Grotesk, Inter } from "next/font/google";
 import "./globals.css";
 import { Navigation } from "@/components/navigation";
+import { Toaster } from "@/components/ui/sonner"
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -30,6 +31,7 @@ export default function RootLayout({ children }) {
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {children}
           </main>
+          <Toaster position="top-right" />
         </div>
       </body>
     </html>
